@@ -65,6 +65,27 @@ def read_metadata(directory, dm2inf):
 
     return metadata_map
 
+
+def calculate_delays(dms, md_map, fudge=1):
+    '''Calculates the delays for each trial disperion based on metadata.'''
+    # stole this from previous attempt (ssps)
+    assert len(dms) > 0
+
+    delay_map = {}
+    tmp = md_map[dms[0]]
+
+    # Note : the bandwidth in PRESTO .inf files is in MHz
+    bottom_of_band = tmp.low_channel_central_freq - 0.5 * tmp.channel_bandwidth
+    top_of_band = bottom_of_band + tmp.n_channels * tmp.channel_bandwidth
+    print 'Observing band [%f, %f] MHz' % (bottom_of_band, top_of_band)
+
+    # Thanks to Eduardo Rubio Herrera for helping me with this!
+    for dm in dms:
+        delay = 4.1e-3 * dm * ((1000 / bottom_of_band) ** 2 -
+                               (1000 / top_of_band) ** 2) * fudge
+        delay_map[dm] = delay
+    return delay_map
+
 # =============================================================================
 # =============================================================================
 
@@ -101,6 +122,9 @@ def check_commandline():
     p.add_option('--uselinkplaceholder', dest='uselinkplaceholder',
                  help='Use placeholders for next, previous and home links.',
                  default=False, action='store_true')
+    p.add_option('--compensate', dest='compensate_delay', action='store_true',
+                 help='Compensate for DM delay',
+                 default=False)
     options, args = p.parse_args()
 
     if len(args) == 0:
@@ -118,6 +142,8 @@ class SinglePulseReaderBase(object):
         self.inf_map = find_files(self.inf_dir, INF_PATTERN)
         self.md_map = read_metadata(self.inf_dir, self.inf_map)
         self.dms = list(set(self.sp_map.keys()) & set(self.inf_map.keys()))
+
+        self.delay_map = calculate_delays(self.dms, self.md_map)
 
         if len(self.dms) == 0:
             raise Exception('No matching .inf AND .singlepulse files in %s' %
@@ -142,9 +168,13 @@ class SinglePulseReaderBase(object):
         self.n_error = 0
         self.n_rejected = 0
 
-    def iterate_trial(self, dm):
+    def iterate_trial(self, dm, compensate_delay):
         # for each candidate return: t
         sp_file = os.path.join(self.sp_dir, self.sp_map[dm])
+        if compensate_delay:
+            delay = self.delay_map[dm]
+        else:
+            delay = 0
 
         with open(sp_file, 'r') as f:
             for line in f:
@@ -155,8 +185,8 @@ class SinglePulseReaderBase(object):
                     self.n_error += 1
                 else:
                     self.n_success += 1
-                    if self.tstart <= t <= self.tend:
-                        yield t
+                    if self.tstart <= t + delay <= self.tend:
+                        yield t + delay
 
 
 def get_dmi_range(spr, dmspercell):
@@ -170,7 +200,7 @@ def get_dmi_range(spr, dmspercell):
 
 
 def count_detections(spr, dmspercell, max_dmi, start_time, end_time,
-                     secondspercell):
+                     secondspercell, compensate_delay):
     ybins = (max_dmi + 1) // dmspercell
     assert (max_dmi + 1) % dmspercell == 0
 
@@ -182,7 +212,7 @@ def count_detections(spr, dmspercell, max_dmi, start_time, end_time,
     ar = numpy.zeros((xbins, ybins), dtype=numpy.dtype(int))
     for i, dm in enumerate(spr.dms):
         ycell = i // dmspercell
-        for t in spr.iterate_trial(dm):
+        for t in spr.iterate_trial(dm, compensate_delay):
             if start_time <= t < end_time:
                 xcell = int((t - start_time) / dx)
                 ar[xcell, ycell] += 1
@@ -265,7 +295,8 @@ if __name__ == '__main__':
 
             # for main panel:
             ar = count_detections(spr, options.dmspercell, max_dmi, options.s,
-                                  options.e, options.secondspercell)
+                                  options.e, options.secondspercell,
+                                  options.compensate_delay)
             if options.black:
                 gr = RGBGradient((1, 30), (0, 0, 1), (1, 0, 0), min_value=1,
                                  max_value=40)
