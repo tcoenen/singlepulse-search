@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# By Thijs Coenen (2012) for PhD thesis research at the Universiteit van 
+# By Thijs Coenen (2012-2013) for PhD thesis research at the Universiteit van
 # Amsterdam.
 '''
 Condensed single pulse plots from PRESTO .singlepulse/.inf files.
@@ -65,8 +65,8 @@ def read_metadata(directory, dm2inf):
 
     return metadata_map
 
-# ============================================================================= 
-# ============================================================================= 
+# =============================================================================
+# =============================================================================
 
 
 def check_commandline():
@@ -98,7 +98,15 @@ def check_commandline():
                  default=10)
     p.add_option('--limit', dest='limit', type='float', metavar='N_DETECTIONS',
                  help='Draw line in lower panel at ... detections per bin.')
+    p.add_option('--uselinkplaceholder', dest='uselinkplaceholder',
+                 help='Use placeholders for next, previous and home links.',
+                 default=False, action='store_true')
     options, args = p.parse_args()
+
+    if len(args) == 0:
+        p.print_usage()
+        p.print_help()
+
     return options, args
 
 
@@ -241,15 +249,17 @@ if __name__ == '__main__':
         # Do some setting up and calculations:
         cv = SVGCanvas(1250, 760)
         try:
+            print 'Scanning for .singlepulse and .inf files ...'
             spr = SinglePulseReaderBase(searchoutdir, options.s, options.e,
                                         options.lo, options.hi)
+            print '... done'
         except:
             datapath = os.path.abspath(searchoutdir)
             msg = 'Problem with data in %s, nothing present?' % datapath
             cv.add_plot_container(TextFragment(100, 100, msg, font_size=15))
         else:
             print 'Number of DM-trials: %d' % len(spr.dms)
-            tf = TextFragment(870, 580, spr.sp_map[spr.dms[0]][:-12])
+            tf = TextFragment(870, 600, spr.sp_map[spr.dms[0]][:-12])
             cv.add_plot_container(tf)
             min_dmi, max_dmi = get_dmi_range(spr, options.dmspercell)
 
@@ -358,7 +368,8 @@ if __name__ == '__main__':
             cv.add_plot_container(pc_gr)
 
         # Text (data set, next previous, etc...)
-        if len(output_files) > 0:
+        if len(output_files) > 1:
+            print 'joy?', output_files
             if plot_i < len(output_files) - 1:
                 tf = TextFragment(870, 600, 'Next', color='blue',
                                   link=output_files[plot_i + 1][2])
@@ -367,6 +378,17 @@ if __name__ == '__main__':
                 tf = TextFragment(920, 600, 'Previous', color='blue',
                                   link=output_files[plot_i - 1][2])
                 cv.add_plot_container(tf)
+        elif options.uselinkplaceholder:
+                print 'Using link placeholders'
+                cv.add_plot_container(TextFragment(870, 580, 'Home',
+                                      color='blue',
+                                      link='HOME_PLACEHOLDER'))
+                cv.add_plot_container(TextFragment(1020, 580, 'Next',
+                                      color='blue',
+                                      link='NEXT_PLACEHOLDER'))
+                cv.add_plot_container(TextFragment(1070, 580, 'Previous',
+                                      color='blue',
+                                      link='PREVIOUS_PLACEHOLDER'))
 
         with open(fn, 'w') as f:
             cv.draw(f)
