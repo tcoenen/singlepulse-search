@@ -10,6 +10,7 @@ so no black backgrounds and glitches fixed.
 # Python standard library imports
 from __future__ import division
 import os
+import sys
 import optparse
 import StringIO
 from base64 import encodestring
@@ -271,6 +272,7 @@ def check_directories(dirs):
 
 
 if __name__ == '__main__':
+    print 'Called with:', sys.argv
     options, args = check_commandline()
 
     output_files = check_directories(args)
@@ -400,13 +402,12 @@ if __name__ == '__main__':
 
         # Text (data set, next previous, etc...)
         if len(output_files) > 1:
-            print 'joy?', output_files
             if plot_i < len(output_files) - 1:
-                tf = TextFragment(870, 600, 'Next', color='blue',
+                tf = TextFragment(870, 580, 'Next', color='blue',
                                   link=output_files[plot_i + 1][2])
                 cv.add_plot_container(tf)
             if plot_i > 0:
-                tf = TextFragment(920, 600, 'Previous', color='blue',
+                tf = TextFragment(920, 580, 'Previous', color='blue',
                                   link=output_files[plot_i - 1][2])
                 cv.add_plot_container(tf)
         elif options.uselinkplaceholder:
