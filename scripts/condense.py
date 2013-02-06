@@ -23,6 +23,7 @@ import Image
 # Imports from brp plotting library
 from brp.svg.base import SVGCanvas, PlotContainer, TextFragment
 from brp.svg.plotters.scatter import ScatterPlotter
+from brp.svg.plotters.line import LinePlotter
 from brp.svg.plotters.raster import RasterPlotterMixin
 from brp.svg.plotters.gradient import RGBGradient, GradientPlotter
 from brp.svg.plotters.histogram import HistogramPlotter
@@ -370,7 +371,8 @@ if __name__ == '__main__':
             pc_right2.left.set_label('DM Index')
             dms = spr.dms[:]
             dm_indices = list(range(len(dms)))
-            pc_right2.add_plotter(ScatterPlotter(dms, dm_indices))
+            pc_right2.add_plotter(LinePlotter(dms, dm_indices,
+                                  use_markers=False))
             pc_right2.set_minimum_data_bbox((dms[0], min_dmi, dms[1], max_dmi))
             cv.add_plot_container(pc_right2)
 
