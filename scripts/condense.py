@@ -127,7 +127,18 @@ def check_commandline():
     p.add_option('--compensate', dest='compensate_delay', action='store_true',
                  help='Compensate for DM delay',
                  default=False)
+    p.add_option('--type', dest='type', type='string', metavar='TYPE_OF_PLOT',
+                 help='Binning type: N number detections, M max(snr), S sum(snr)',
+                 default='N')
+
     options, args = p.parse_args()
+
+    ALLOWED_TYPES = 'NMS'
+    if options.type not in ALLOWED_TYPES:
+        print 'Choose a type of plot from %s' % str(ALLOWED_TYPES.split())
+        p.print_usage()
+        p.print_help()
+        sys.exit(1)
 
     if len(args) == 0:
         p.print_usage()
@@ -183,12 +194,13 @@ class SinglePulseReaderBase(object):
                 split_line = line.split()
                 try:
                     t = float(split_line[2])
+                    snr = float(split_line[1])
                 except:
                     self.n_error += 1
                 else:
                     self.n_success += 1
                     if self.tstart <= t + delay <= self.tend:
-                        yield t + delay
+                        yield t + delay, snr
 
 
 def get_dmi_range(spr, dmspercell):
@@ -202,7 +214,7 @@ def get_dmi_range(spr, dmspercell):
 
 
 def count_detections(spr, dmspercell, max_dmi, start_time, end_time,
-                     secondspercell, compensate_delay):
+                     secondspercell, compensate_delay, plot_type):
     ybins = (max_dmi + 1) // dmspercell
     assert (max_dmi + 1) % dmspercell == 0
 
@@ -214,10 +226,23 @@ def count_detections(spr, dmspercell, max_dmi, start_time, end_time,
     ar = numpy.zeros((xbins, ybins), dtype=numpy.dtype(int))
     for i, dm in enumerate(spr.dms):
         ycell = i // dmspercell
-        for t in spr.iterate_trial(dm, compensate_delay):
-            if start_time <= t < end_time:
-                xcell = int((t - start_time) / dx)
-                ar[xcell, ycell] += 1
+
+        # TODO : see whether the delay compensation can be moved here?!
+        if plot_type == 'N':
+            for t, snr in spr.iterate_trial(dm, compensate_delay):
+                if start_time <= t < end_time:
+                    xcell = int((t - start_time) / dx)
+                    ar[xcell, ycell] += 1
+        elif plot_type == 'M':
+            for t, snr in spr.iterate_trial(dm, compensate_delay):
+                if start_time <= t < end_time:
+                    xcell = int((t - start_time) / dx)
+                    ar[xcell, ycell] = max(snr, ar[xcell, ycell])
+        elif plot_type == 'S':
+            for t, snr in spr.iterate_trial(dm, compensate_delay):
+                if start_time <= t < end_time:
+                    xcell = int((t - start_time) / dx)
+                    ar[xcell, ycell] += snr
 
     return ar
 
@@ -296,22 +321,35 @@ if __name__ == '__main__':
             cv.add_plot_container(tf)
             min_dmi, max_dmi = get_dmi_range(spr, options.dmspercell)
 
-            # for main panel:
+            # for main, count detections (or do SNR calculation per cell):
             ar = count_detections(spr, options.dmspercell, max_dmi, options.s,
                                   options.e, options.secondspercell,
-                                  options.compensate_delay)
+                                  options.compensate_delay, options.type)
+            # set up the gradient:
+            if options.type == 'N':
+                m, M = 1, 30
+            elif options.type == 'M':
+                m, M = 5, 30
+            elif options.type == 'S':
+                m, M = 5, 30
+
             if options.black:
-                gr = RGBGradient((1, 30), (0, 0, 1), (1, 0, 0), min_value=1,
+                gr = RGBGradient((m, M), (0, 0, 1), (1, 0, 0), min_value=1,
                                  max_value=40)
             else:
-                gr = RGBGradient((1, 30), (0, 0, 1), (1, 0, 0), min_value=1,
+                gr = RGBGradient((m, M), (0, 0, 1), (1, 0, 0), min_value=1,
                                  max_value=40, min_value_color=(1, 1, 1),
                                  max_value_color=(1, 0, 0))
+
             colored_ar = colorcode_ar_2d(ar, gr)
             png_str = colorcoded_ar_2d2png_string(colored_ar)
 
             # for right panel
-            collapsed_h = numpy.sum(ar, axis=0)
+            if options.type in 'NS':
+                collapsed_h = numpy.sum(ar, axis=0)
+            elif options.type == 'M':
+                collapsed_h = numpy.max(ar, axis=0)
+
             stepsize = options.dmspercell
             edges_dmi = [min_dmi + i * stepsize for i in
                          range(len(collapsed_h) + 1)]
@@ -321,7 +359,11 @@ if __name__ == '__main__':
                 bins_dmi.append((edges_dmi[ii], edges_dmi[ii + 1], val))
 
             # bottom panel
-            collapsed_v = numpy.sum(ar, axis=1)
+            if options.type in 'NS':
+                collapsed_v = numpy.sum(ar, axis=1)
+            elif options.type == 'M':
+                collapsed_v = numpy.max(ar, axis=1)
+
             dt = (options.e - options.s) / len(collapsed_v)
             edges_t = [options.s + i * dt for i in range(len(collapsed_v) + 1)]
 
@@ -331,6 +373,8 @@ if __name__ == '__main__':
 
             # Do the plots:
             PLOT_HEIGHT = 600
+
+            TYPE2TITLE = {'N': 'Count', 'M': 'Max(SNR)', 'S': 'Sum(SNR)'}
 
             # Main panel, color-coded number of detections on DM-trial-time plane:
             pc_main = PlotContainer(0, -30, 900, PLOT_HEIGHT)
@@ -350,7 +394,7 @@ if __name__ == '__main__':
             pc_right1 = PlotContainer(820, -30, 270, PLOT_HEIGHT)
             pc_right1.add_plotter(HistogramPlotter(bins_dmi, False,
                                   orientation='vertical'))
-            pc_right1.bottom.set_label('Count')
+            pc_right1.bottom.set_label(TYPE2TITLE[options.type])
             pc_right1.top.hide_label()
             pc_right1.top.hide_tickmarklabels()
             pc_right1.left.hide_tickmarklabels()
@@ -386,7 +430,7 @@ if __name__ == '__main__':
             pc_bottom.top.hide_label()
             pc_bottom.bottom.set_label('Time (s)')
             pc_bottom.right.hide_label()
-            pc_bottom.left.set_label('Count')
+            pc_bottom.left.set_label(TYPE2TITLE[options.type])
             pc_bottom.right.hide_tickmarklabels()
             pc_bottom.right.hide_label()
             cv.add_plot_container(pc_bottom)
@@ -398,7 +442,7 @@ if __name__ == '__main__':
             pc_gr.right.hide_all()
             pc_gr.top.hide_tickmarklabels()
             pc_gr.top.hide_label()
-            pc_gr.bottom.set_label('Count')
+            pc_gr.bottom.set_label(TYPE2TITLE[options.type])
             pc_gr.add_plotter(grp)
             cv.add_plot_container(pc_gr)
 
