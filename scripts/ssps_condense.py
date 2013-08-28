@@ -15,6 +15,7 @@ import optparse
 import StringIO
 from base64 import encodestring
 import re
+from collections import defaultdict
 
 # Standard 3rd party libraries
 import numpy
@@ -22,15 +23,16 @@ import Image
 
 # Imports from brp plotting library
 from brp.svg.base import SVGCanvas, PlotContainer, TextFragment
-from brp.svg.plotters.scatter import ScatterPlotter
 from brp.svg.plotters.line import LinePlotter
 from brp.svg.plotters.raster import RasterPlotterMixin
 from brp.svg.plotters.gradient import RGBGradient, GradientPlotter
 from brp.svg.plotters.histogram import HistogramPlotter
 from brp.svg.plotters.limit import YLimitPlotter
 
-# Other single pulse search imports
-import inf
+# Imports from the ssps single-pulse search library
+from ssps import inf
+from ssps.candidate import read_delays
+from ssps.support import check_delays_option
 
 # =============================================================================
 # == Temporary copy of utility functions from other single pulse scripts,    ==
@@ -68,31 +70,14 @@ def read_metadata(directory, dm2inf):
     return metadata_map
 
 
-def calculate_delays(dms, md_map, fudge=1):
-    '''Calculates the delays for each trial disperion based on metadata.'''
-    # stole this from previous attempt (ssps)
-    assert len(dms) > 0
-
-    delay_map = {}
-    tmp = md_map[dms[0]]
-
-    # Note : the bandwidth in PRESTO .inf files is in MHz
-    bottom_of_band = tmp.low_channel_central_freq - 0.5 * tmp.channel_bandwidth
-    top_of_band = bottom_of_band + tmp.n_channels * tmp.channel_bandwidth
-    print 'Observing band [%f, %f] MHz' % (bottom_of_band, top_of_band)
-
-    # Thanks to Eduardo Rubio Herrera for helping me with this!
-    for dm in dms:
-        delay = 4.1e-3 * dm * ((1000 / bottom_of_band) ** 2 -
-                               (1000 / top_of_band) ** 2) * fudge
-        delay_map[dm] = delay
-    return delay_map
-
 # =============================================================================
 # =============================================================================
 
 
-def check_commandline():
+def get_commandline_parser():
+    '''
+    Set up commandline parser.
+    '''
     p = optparse.OptionParser()
     p.add_option('--dmspercell', type='int', default=5, metavar='NUMBER',
                  dest='dmspercell',
@@ -124,15 +109,19 @@ def check_commandline():
     p.add_option('--uselinkplaceholder', dest='uselinkplaceholder',
                  help='Use placeholders for next, previous and home links.',
                  default=False, action='store_true')
-    p.add_option('--compensate', dest='compensate_delay', action='store_true',
-                 help='Compensate for DM delay',
-                 default=False)
     p.add_option('--type', dest='type', type='string', metavar='TYPE_OF_PLOT',
                  help='Binning type: N number detections, M max(snr), S sum(snr)',
                  default='N')
+    p.add_option('--delays', dest='delays', type='string',
+                 help='File with DM delays (two columns; <DM> <delay(s)>).')
 
-    options, args = p.parse_args()
+    return p
 
+
+def check_type_option(options, args, p):
+    '''
+    Check --type commandline option.
+    '''
     ALLOWED_TYPES = 'NMS'
     if options.type not in ALLOWED_TYPES:
         print 'Choose a type of plot from %s' % str(ALLOWED_TYPES.split())
@@ -140,15 +129,9 @@ def check_commandline():
         p.print_help()
         sys.exit(1)
 
-    if len(args) == 0:
-        p.print_usage()
-        p.print_help()
-
-    return options, args
-
 
 class SinglePulseReaderBase(object):
-    def __init__(self, directory, tstart, tend, lodm=None, hidm=None):
+    def __init__(self, directory, tstart, tend, delays_file, lodm=None, hidm=None):
         self.sp_dir = os.path.join(directory, 'SINGLEPULSE')
         self.inf_dir = os.path.join(directory, 'INF')
         self.sp_map = find_files(self.sp_dir, SP_PATTERN)
@@ -156,7 +139,11 @@ class SinglePulseReaderBase(object):
         self.md_map = read_metadata(self.inf_dir, self.inf_map)
         self.dms = list(set(self.sp_map.keys()) & set(self.inf_map.keys()))
 
-        self.delay_map = calculate_delays(self.dms, self.md_map)
+        delay_map = defaultdict(float)
+        if delays_file:
+            print 'Loading delays from %s' % delays_file
+            delay_map = read_delays(delays_file, delay_map)
+        self.delay_map = delay_map
 
         if len(self.dms) == 0:
             raise Exception('No matching .inf AND .singlepulse files in %s' %
@@ -165,13 +152,11 @@ class SinglePulseReaderBase(object):
         # Store desired DM, time range.
         self.tstart = tstart
         self.tend = tend
-        self.lodm = lodm
-        self.hidm = hidm
 
         # Only work on the DM trials in the desired range -> filter them.
-        if self.lodm:
+        if lodm:
             self.dms = [dm for dm in self.dms if lodm <= dm]
-        if self.hidm:
+        if hidm:
             self.dms = [dm for dm in self.dms if dm <= hidm]
 
         self.dms.sort()
@@ -181,15 +166,12 @@ class SinglePulseReaderBase(object):
         self.n_error = 0
         self.n_rejected = 0
 
-    def iterate_trial(self, dm, compensate_delay):
+    def iterate_trial(self, dm):
         # for each candidate return: t
         sp_file = os.path.join(self.sp_dir, self.sp_map[dm])
-        if compensate_delay:
-            delay = self.delay_map[dm]
-        else:
-            delay = 0
 
         with open(sp_file, 'r') as f:
+            delay = self.delay_map[dm]
             for line in f:
                 split_line = line.split()
                 try:
@@ -204,7 +186,7 @@ class SinglePulseReaderBase(object):
 
 
 def get_dmi_range(spr, dmspercell):
-    # Remember zero based indexing, hence the - 1 !
+
     if len(spr.dms) % dmspercell == 0:
         max_dmi = len(spr.dms) - 1
     else:
@@ -214,7 +196,7 @@ def get_dmi_range(spr, dmspercell):
 
 
 def count_detections(spr, dmspercell, max_dmi, start_time, end_time,
-                     secondspercell, compensate_delay, plot_type):
+                     secondspercell, plot_type):
     ybins = (max_dmi + 1) // dmspercell
     assert (max_dmi + 1) % dmspercell == 0
 
@@ -229,17 +211,17 @@ def count_detections(spr, dmspercell, max_dmi, start_time, end_time,
 
         # TODO : see whether the delay compensation can be moved here?!
         if plot_type == 'N':
-            for t, snr in spr.iterate_trial(dm, compensate_delay):
+            for t, snr in spr.iterate_trial(dm):
                 if start_time <= t < end_time:
                     xcell = int((t - start_time) / dx)
                     ar[xcell, ycell] += 1
         elif plot_type == 'M':
-            for t, snr in spr.iterate_trial(dm, compensate_delay):
+            for t, snr in spr.iterate_trial(dm):
                 if start_time <= t < end_time:
                     xcell = int((t - start_time) / dx)
                     ar[xcell, ycell] = max(snr, ar[xcell, ycell])
         elif plot_type == 'S':
-            for t, snr in spr.iterate_trial(dm, compensate_delay):
+            for t, snr in spr.iterate_trial(dm):
                 if start_time <= t < end_time:
                     xcell = int((t - start_time) / dx)
                     ar[xcell, ycell] += snr
@@ -277,7 +259,7 @@ class SinglePulsePlotter(RasterPlotterMixin):
         self.img_bbox = bbox
 
 
-def check_directories(dirs):
+def check_directories(options, args, p):
     output_files = []
     for plot_i, searchoutdir in enumerate(args):
         fn = options.basename + '-%08d.xml' % plot_i
@@ -299,9 +281,19 @@ def check_directories(dirs):
 
 if __name__ == '__main__':
     print 'Called with:', sys.argv
-    options, args = check_commandline()
 
-    output_files = check_directories(args)
+    p = get_commandline_parser()
+    options, args = p.parse_args()
+
+    if len(args) == 0:
+        p.print_usage()
+        p.print_help()
+
+    # Some custom checks:
+    delays_file = check_delays_option(options, args, p)
+    check_type_option(options, args, p)
+    output_files = check_directories(options, args, p)
+
     for plot_i, searchoutdir, fn in output_files:
         print plot_i, searchoutdir, fn
         # Do some setting up and calculations:
@@ -309,7 +301,7 @@ if __name__ == '__main__':
         try:
             print 'Scanning for .singlepulse and .inf files ...'
             spr = SinglePulseReaderBase(searchoutdir, options.s, options.e,
-                                        options.lo, options.hi)
+                                        delays_file, options.lo, options.hi)
             print '... done'
         except:
             datapath = os.path.abspath(searchoutdir)
@@ -324,7 +316,7 @@ if __name__ == '__main__':
             # for main, count detections (or do SNR calculation per cell):
             ar = count_detections(spr, options.dmspercell, max_dmi, options.s,
                                   options.e, options.secondspercell,
-                                  options.compensate_delay, options.type)
+                                  options.type)
             # set up the gradient:
             if options.type == 'N':
                 m, M = 1, 30
@@ -470,3 +462,4 @@ if __name__ == '__main__':
 
         with open(fn, 'w') as f:
             cv.draw(f)
+        print spr.n_error, spr.n_success
