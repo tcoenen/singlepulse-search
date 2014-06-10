@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # By Thijs Coenen (2012-2013) for PhD thesis research at the Universiteit van
-# Amsterdam.
+# Amsterdam. 
+# Thijs Coenen (2014) 
 '''
 Condensed single pulse plots from PRESTO .singlepulse/.inf files.
 
