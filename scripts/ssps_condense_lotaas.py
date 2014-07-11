@@ -36,41 +36,6 @@ from ssps import inf
 from ssps.candidate import read_delays
 from ssps.support import check_delays_option
 
-# =============================================================================
-# == Temporary copy of utility functions from other single pulse scripts,    ==
-# == to be replaced with library functions when everything is public.        ==
-# =============================================================================
-####SP_PATTERN = re.compile(r'\S+_DM(?P<dm>\d+\.\d+)\.singlepulse')
-####INF_PATTERN = re.compile(r'\S+_DM(?P<dm>\d+\.\d+)\.inf')
-
-
-####def find_files(directory, pattern):
-####    '''
-####    Find files matching pattern, return map from DM to filename.
-####    '''
-####
-####    files = os.listdir(directory)
-####    dm2file = {}
-####    for f in files:
-####        m = pattern.match(f)
-####        if m:
-####            dm = float(m.group('dm'))
-####            dm2file[dm] = f
-####
-####    return dm2file
-####
-####
-####def read_metadata(directory, dm2inf):
-####    '''
-####    Read all given PRESTO style .inf files in directory.
-####    '''
-####
-####    metadata_map = {}
-####    for dm, f in dm2inf.iteritems():
-####        metadata_map[dm] = inf.inf_reader(os.path.join(directory, f))
-####
-####    return metadata_map
-
 
 # =============================================================================
 # =============================================================================
@@ -146,7 +111,7 @@ class SinglePulseReaderLOTAAS(object):
         metadata_map = {}
         for dm in self.dms:
             metadata_map[dm] = copy.deepcopy(metadata)
-            # HACK to get around missing .inf files:
+            # LOTAAS specific HACK to get around missing .inf files: 
             metadata_map[dm].binwidth = binwidth_map[dm] 
         self.md_map = metadata_map
 
@@ -348,7 +313,8 @@ if __name__ == '__main__':
         try:
             print 'Scanning .singlepulse file ...'
             spr = SinglePulseReaderLOTAAS(
-                'L204720_SAP1_BEAM22', 
+                #'L204720_SAP1_BEAM22', 
+                args[0],
                 options.s, options.e, delays_file, options.lo, options.hi
             )
             print '... done'
