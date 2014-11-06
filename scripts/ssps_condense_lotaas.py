@@ -36,6 +36,7 @@ from ssps import inf
 from ssps.candidate import read_delays
 from ssps.support import check_delays_option
 
+from ssps import lotaas
 
 # =============================================================================
 # =============================================================================
@@ -95,107 +96,6 @@ def check_type_option(options, args, p):
         p.print_usage()
         p.print_help()
         sys.exit(1)
-
-class SinglePulseReaderLOTAAS(object):
-    def __init__(self, basename, tstart, tend, delays_file, lodm=None, hidm=None):
-        # files to read:
-        self.singlepulse_file = basename + '.singlepulse'
-        self.inf_file = basename + '.inf'
-
-        index, binwidth_map = self.scan_data()
-        self.index = index
-        self.dms = index.keys()
-        self.dms.sort()
-
-        metadata = inf.inf_reader(self.inf_file)
-        metadata_map = {}
-        for dm in self.dms:
-            metadata_map[dm] = copy.deepcopy(metadata)
-            # LOTAAS specific HACK to get around missing .inf files: 
-            metadata_map[dm].binwidth = binwidth_map[dm] 
-        self.md_map = metadata_map
-
-        delay_map = defaultdict(float)
-        if delays_file:
-            print 'Loading delays from %s' % delays_file
-            delay_map = read_delays(delays_file, delay_map)
-        self.delay_map = delay_map
-
-        self.n_success = 0
-        self.n_error = 0
-        self.n_rejected = 0
-        
-        self.tstart = tstart
-        self.tend = tend
-
-        # Only work on the DM trials in the desired range -> filter them.
-        if lodm:
-            self.dms = [dm for dm in self.dms if lodm <= dm]
-        if hidm:
-            self.dms = [dm for dm in self.dms if dm <= hidm]
-
-
-    def scan_data(self):
-        '''
-        Extract binwidths and DM positions from the singlepulse file.
-
-        Note:
-        Assumes that the LOTAAS style singlepulse file contains many DMs and that
-        the data for each DM is a set of consecutive lines that are sorted in time.
-
-        '''
-        index = {}
-        binwidth_map = {}
-        last_dm = -1
-
-        with open(self.singlepulse_file, 'r') as f:
-            filepos = 0
-            line = f.readline()
-
-            while len(line) > 0:
-                lastpos = filepos
-                filepos = f.tell()
-
-                if line and line[0] != '#':
-                    split_line = line.split()
-                    dm = float(split_line[0])
-                    
-                    if dm != last_dm:
-                        if last_dm != -1:
-                            index[last_dm][1] = lastpos
-                        index[dm] = [lastpos, filepos]
-                        binwidth_map[dm] = float(split_line[5])
-
-                    last_dm = dm
-                else:
-                    assert lastpos == 0  # only want comments on first line of file!
-
-                line = f.readline()
-
-        return index, binwidth_map
-
-    def iterate_trial(self, dm):
-
-        delay = self.delay_map[dm]
-        startpos, endpos = self.index[dm]
-
-        with open(self.singlepulse_file, 'r') as f:
-            f.seek(startpos)
-            
-            while f.tell() < endpos:
-                line = f.readline()
-
-                split_line = line.split()
-                try:
-                    t = float(split_line[2])
-                    snr = float(split_line[1])
-                except:
-                    self.n_error += 1
-                else:
-                    self.n_success += 1
-                    if self.tstart <= t + delay <= self.tend:
-                        yield t + delay, snr
-
 
 def get_dmi_range(spr, dmspercell):
 
@@ -312,8 +212,7 @@ if __name__ == '__main__':
         cv = SVGCanvas(1250, 760)
         try:
             print 'Scanning .singlepulse file ...'
-            spr = SinglePulseReaderLOTAAS(
-                #'L204720_SAP1_BEAM22', 
+            spr = lotaas.LOTAASCondenserMixin(
                 args[0],
                 options.s, options.e, delays_file, options.lo, options.hi
             )
@@ -323,7 +222,6 @@ if __name__ == '__main__':
             msg = 'Problem with data in %s, nothing present?' % datapath
             cv.add_plot_container(TextFragment(100, 100, msg, font_size=15))
         else:
-            print "WHATEVER"
             print 'Number of DM-trials: %d' % len(spr.dms)
             #tf = TextFragment(870, 600, spr.sp_map[spr.dms[0]][:-12])
             tf = TextFragment(870, 600, 'PLACEHOLDER')

@@ -19,6 +19,7 @@ from ssps.support import check_delays_option
 
 # for the porting:
 from ssps import inf
+from ssps import lotaas
 import copy
 from collections import defaultdict
 
@@ -27,151 +28,10 @@ from collections import defaultdict
 
 HARD_LIMIT_N_CANDIDATES = 1000000  # Maximum number of candidates in data.
 EPSILON = 1e-5  # (Smaller than DM0.00 time-series bin size in seconds!)
-
-
-class SinglePulseReaderLOTAAS(object):
-    def __init__(self, basename, tstart, tend, delays_file, lodm=None, hidm=None,
-                 max_downfact=30):
-        # files to read:
-        self.singlepulse_file = basename + '.singlepulse'
-        self.inf_file = basename + '.inf'
-
-        index, binwidth_map = self.scan_data()
-        self.index = index
-        self.dms = index.keys()
-        self.dms.sort()
-
-        metadata = inf.inf_reader(self.inf_file)
-        metadata_map = {}
-        for dm in self.dms:
-            metadata_map[dm] = copy.deepcopy(metadata)
-            # LOTAAS specific HACK to get around missing .inf files: 
-            metadata_map[dm].binwidth = binwidth_map[dm] 
-        self.md_map = metadata_map
-
-        delay_map = defaultdict(float)
-        if delays_file:
-            print 'Loading delays from %s' % delays_file
-            delay_map = read_delays(delays_file, delay_map)
-        self.delay_map = delay_map
-
-        self.dm2idx = dict([(dm, i) for i, dm in enumerate(self.dms)])
-        self.max_downfact = max_downfact
-
-        self.n_success = 0
-        self.n_error = 0
-        self.n_rejected = 0
-        
-        self.tstart = tstart
-        self.tend = tend
-
-        # Only work on the DM trials in the desired range -> filter them.
-        if lodm:
-            self.dms = [dm for dm in self.dms if lodm <= dm]
-        if hidm:
-            self.dms = [dm for dm in self.dms if dm <= hidm]
-
-        self.dm_delay_map = dict((dm, 0) for dm in self.dms)
-
-    def scan_data(self):
-        '''
-        Extract binwidths and DM positions from the singlepulse file.
-
-        Note:
-        Assumes that the LOTAAS style singlepulse file contains many DMs and that
-        the data for each DM is a set of consecutive lines that are sorted in time.
-
-        '''
-        index = {}
-        binwidth_map = {}
-        last_dm = -1
-
-        with open(self.singlepulse_file, 'r') as f:
-            filepos = 0
-            line = f.readline()
-
-            while len(line) > 0:
-                lastpos = filepos
-                filepos = f.tell()
-
-                if line and line[0] != '#':
-                    split_line = line.split()
-                    dm = float(split_line[0])
-                    
-                    if dm != last_dm:
-                        if last_dm != -1:
-                            index[last_dm][1] = lastpos
-                        index[dm] = [lastpos, filepos]
-                        binwidth_map[dm] = float(split_line[5])
-
-                    last_dm = dm
-                else:
-                    assert lastpos == 0  # only want comments on first line of file!
-
-                line = f.readline()
-
-        return index, binwidth_map
-
-    def get_t_overlap(self, dm):
-        '''
-        TBD
-        '''
-        return self.max_downfact * self.md_map[dm].bin_width + EPSILON
-
-    def iterate_trial(self, dm):
-
-        epsilon = EPSILON
-        max_n_candidates = HARD_LIMIT_N_CANDIDATES
-        bin_width = self.md_map[dm].bin_width
-        i = self.dm2idx[dm]
-        dm_delay = self.dm_delay_map[dm]
-
-        delay = self.delay_map[dm]
-        startpos, endpos = self.index[dm]
-
-        with open(self.singlepulse_file, 'r') as f:
-            f.seek(startpos)
-            
-            while f.tell() < endpos:
-                line = f.readline()
-                split_line = line.split()
-
-                try:
-                    snr = float(split_line[1])
-                    t = float(split_line[2]) + dm_delay
-                    sample = int(split_line[3])
-                    downfact = int(split_line[4])
-                    delta_t = downfact * bin_width + epsilon
-                except:
-                    self.n_error += 1
-                else:
-#                    if self.is_ok(t, dm):
-                    if True:
-                        cand = (dm, snr, t, sample, downfact, t - delta_t,
-                                t + delta_t, i)
-
-                        self.n_success += 1
-                        if self.n_success > max_n_candidates:
-                            raise TooManyCandidates(max_n_candidates)
-                        yield cand
-                    else:
-                        self.n_rejected += 1
-
-
-def get_dmi_range(spr, dmspercell):
-
-    if len(spr.dms) % dmspercell == 0:
-        max_dmi = len(spr.dms) - 1
-    else:
-        max_dmi = dmspercell * (1 + len(spr.dms) // dmspercell) - 1
-
-    return 0, max_dmi
-
-# -----------------------------------------------------------------------------
-# -----------------------------------------------------------------------------
-
-
 DMS_ADJACENT = 4
+
+# -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 # Commandline help message:
 USAGE = '''python grab.py <options>
@@ -296,7 +156,8 @@ if __name__ == '__main__':
     print '=' * 77
 #    print 'Processing %s' % searchoutdir
     print 'Looking for datafiles.'
-    spr = SinglePulseReaderLOTAAS(args[0], delays_file, 30, options.lo_dm,
+#    spr = SinglePulseReaderLOTAAS(args[0], delays_file, 30, options.lo_dm,
+    spr = lotaas.LOTAASGrabberMixin(args[0], delays_file, 30, options.lo_dm,
                                   options.hi_dm)
 
     print 'DM range after reading: [%.2f, %.2f]' % (spr.dms[0], spr.dms[-1])
