@@ -57,7 +57,7 @@ def get_commandline_parser():
     p.add_option('--s', type='float', default=0, metavar='TIME',
                  dest='s',
                  help='Start time in seconds, time as is in .singlepulse files.')
-    p.add_option('--e', type='float', default=3000, metavar='TIME',
+    p.add_option('--e', type='float', default=3600, metavar='TIME',
                  dest='e',
                  help='End time in seconds, time as is in .singlepulse files.')
     p.add_option('--black', action='store_true', dest='black', default=False,

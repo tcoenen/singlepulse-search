@@ -11,7 +11,6 @@ import sys
 import optparse
 import time
 
-#from ssps import candidate
 from ssps import pulse
 from ssps import pulsetrain
 from ssps import diagnostic
@@ -21,7 +20,6 @@ from ssps.support import check_delays_option
 from ssps import inf
 from ssps import lotaas
 import copy
-from collections import defaultdict
 
 # -----------------------------------------------------------------------------
 # -- Settings for data reduction pipeline -------------------------------------
@@ -154,11 +152,9 @@ if __name__ == '__main__':
         handle_commandline()
     # read data
     print '=' * 77
-#    print 'Processing %s' % searchoutdir
-    print 'Looking for datafiles.'
-#    spr = SinglePulseReaderLOTAAS(args[0], delays_file, 30, options.lo_dm,
-    spr = lotaas.LOTAASGrabberMixin(args[0], delays_file, 30, options.lo_dm,
-                                  options.hi_dm)
+    # NOTE START AND END TIMES STILL HARD CODED
+    spr = lotaas.LOTAASGrabberMixin(args[0], 0, 3600, delays_file, lodm=options.lo_dm,
+                                    hidm=options.hi_dm, max_downfact=30)
 
     print 'DM range after reading: [%.2f, %.2f]' % (spr.dms[0], spr.dms[-1])
 

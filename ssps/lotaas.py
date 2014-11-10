@@ -1,12 +1,14 @@
 # LOTAAS specific format handling
 from ssps import inf
+from ssps import candidate
 import copy
 
 HARD_LIMIT_N_CANDIDATES = 1000000  # Maximum number of candidates in data.
 EPSILON = 1e-5  # (Smaller than DM0.00 time-series bin size in seconds!)
 
 class LOTAASBaseReader(object):
-    def __init__(self, basename, tstart, tend, delays_file, lodm=None, hidm=None):
+    def __init__(self, basename, tstart, tend, delays_file, lodm=None, hidm=None,
+                 max_downfact=30):
         '''
         LOTAAS merged single pulse reader metadata handling
         '''
@@ -20,11 +22,12 @@ class LOTAASBaseReader(object):
 
         self.tstart = tstart
         self.tend = tend
+        self.max_downfact = max_downfact
 
         # determine trial-DMs, load meta data and extra delays per DM
         self.dms = self.grab_dms(index.keys(), lodm, hidm)
         self.md_map = self.grab_metadata_map(self.dms, self.inf_file, binwidth_map)
-        self.dm_delay_map = grab_dm_delays(dms, delays_file)
+        self.dm_delay_map = self.grab_dm_delay_map(self.dms, delays_file)
 
         # for book-keeping purposes
         self.n_success = 0
@@ -38,7 +41,7 @@ class LOTAASBaseReader(object):
         dm_delay_map = dict((dm, 0) for dm in dms)
         if delays_file:
             print 'Loading delays from %s' % delays_file
-            dm_delay_map = read_delays(delays_file, delay_map)
+            dm_delay_map = candidate.read_delays(delays_file, dm_delay_map)
 
         return dm_delay_map
 
@@ -63,9 +66,9 @@ class LOTAASBaseReader(object):
         dms.sort()
 
         if lodm:
-            dms = [dm for dm in self.dms if lodm <= dm]
+            dms = [dm for dm in dms if lodm <= dm]
         if hidm:
-            dms = [dm for dm in self.dms if dm <= hidm]
+            dms = [dm for dm in dms if dm <= hidm]
 
         return dms
 
@@ -113,10 +116,8 @@ class LOTAASGrabberMixin(LOTAASBaseReader):
     def __init__(self, *args, **kwargs):
         # blah ..
         super(LOTAASGrabberMixin, self).__init__(*args, **kwargs)
-        print dir(self)
 
         self.dm2idx = dict([(dm, i) for i, dm in enumerate(self.dms)])
-        self.max_downfact = kwargs.get('max_downfact', 30)
 
     def iterate_trial(self, dm):
 
