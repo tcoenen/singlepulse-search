@@ -31,7 +31,7 @@ from brp.svg.plotters.limit import YLimitPlotter
 
 # Imports from the ssps single-pulse search library
 from ssps import inf
-from ssps.candidate import read_delays
+from ssps.candidate import read_delays, SinglePulseReaderCondensed
 from ssps.support import check_delays_option
 
 # =============================================================================
@@ -128,61 +128,6 @@ def check_type_option(options, args, p):
         p.print_usage()
         p.print_help()
         sys.exit(1)
-
-
-class SinglePulseReaderBase(object):
-    def __init__(self, directory, tstart, tend, delays_file, lodm=None, hidm=None):
-        self.sp_dir = os.path.join(directory, 'SINGLEPULSE')
-        self.inf_dir = os.path.join(directory, 'INF')
-        self.sp_map = find_files(self.sp_dir, SP_PATTERN)
-        self.inf_map = find_files(self.inf_dir, INF_PATTERN)
-        self.md_map = read_metadata(self.inf_dir, self.inf_map)
-        self.dms = list(set(self.sp_map.keys()) & set(self.inf_map.keys()))
-
-        delay_map = defaultdict(float)
-        if delays_file:
-            print 'Loading delays from %s' % delays_file
-            delay_map = read_delays(delays_file, delay_map)
-        self.delay_map = delay_map
-
-        if len(self.dms) == 0:
-            raise Exception('No matching .inf AND .singlepulse files in %s' %
-                            directory)
-
-        # Store desired DM, time range.
-        self.tstart = tstart
-        self.tend = tend
-
-        # Only work on the DM trials in the desired range -> filter them.
-        if lodm:
-            self.dms = [dm for dm in self.dms if lodm <= dm]
-        if hidm:
-            self.dms = [dm for dm in self.dms if dm <= hidm]
-
-        self.dms.sort()
-        self.dm2idx = dict([(dm, i) for i, dm in enumerate(self.dms)])
-
-        self.n_success = 0
-        self.n_error = 0
-        self.n_rejected = 0
-
-    def iterate_trial(self, dm):
-        # for each candidate return: t
-        sp_file = os.path.join(self.sp_dir, self.sp_map[dm])
-
-        with open(sp_file, 'r') as f:
-            delay = self.delay_map[dm]
-            for line in f:
-                split_line = line.split()
-                try:
-                    t = float(split_line[2])
-                    snr = float(split_line[1])
-                except:
-                    self.n_error += 1
-                else:
-                    self.n_success += 1
-                    if self.tstart <= t + delay <= self.tend:
-                        yield t + delay, snr
 
 
 def get_dmi_range(spr, dmspercell):
@@ -300,10 +245,11 @@ if __name__ == '__main__':
         cv = SVGCanvas(1250, 760)
         try:
             print 'Scanning for .singlepulse and .inf files ...'
-            spr = SinglePulseReaderBase(searchoutdir, options.s, options.e,
+            spr = SinglePulseReaderCondensed(searchoutdir, options.s, options.e,
                                         delays_file, options.lo, options.hi)
             print '... done'
         except:
+            raise
             datapath = os.path.abspath(searchoutdir)
             msg = 'Problem with data in %s, nothing present?' % datapath
             cv.add_plot_container(TextFragment(100, 100, msg, font_size=15))

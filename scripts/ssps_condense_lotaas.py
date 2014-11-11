@@ -17,7 +17,6 @@ import StringIO
 from base64 import encodestring
 import re
 from collections import defaultdict
-import copy
 
 # Standard 3rd party libraries
 import numpy

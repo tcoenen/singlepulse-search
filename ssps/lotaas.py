@@ -6,7 +6,7 @@ import copy
 HARD_LIMIT_N_CANDIDATES = 1000000  # Maximum number of candidates in data.
 EPSILON = 1e-5  # (Smaller than DM0.00 time-series bin size in seconds!)
 
-class LOTAASBaseReader(object):
+class LOTAASBaseReader(candidate.SinglePulseReaderMixin):
     def __init__(self, basename, tstart, tend, delays_file, lodm=None, hidm=None,
                  max_downfact=30):
         '''
@@ -34,17 +34,6 @@ class LOTAASBaseReader(object):
         self.n_error = 0
         self.n_rejected = 0
 
-    def grab_dm_delay_map(self, dms, delays_file):
-        '''
-        Extract the delays per DM if available.
-        '''
-        dm_delay_map = dict((dm, 0) for dm in dms)
-        if delays_file:
-            print 'Loading delays from %s' % delays_file
-            dm_delay_map = candidate.read_delays(delays_file, dm_delay_map)
-
-        return dm_delay_map
-
     def grab_metadata_map(self, dms, inf_file, binwidth_map):
         '''
         Grab the metadata for all intersting DMs.
@@ -58,19 +47,6 @@ class LOTAASBaseReader(object):
             metadata_map[dm].binwidth = binwidth_map[dm] 
 
         return metadata_map
-
-    def grab_dms(self, dms, lodm, hidm):
-        '''
-        Grab the list of intersting DMs (in desired DM range).
-        '''
-        dms.sort()
-
-        if lodm:
-            dms = [dm for dm in dms if lodm <= dm]
-        if hidm:
-            dms = [dm for dm in dms if dm <= hidm]
-
-        return dms
 
     def scan_data(self):
         '''
@@ -152,16 +128,10 @@ class LOTAASGrabberMixin(LOTAASBaseReader):
 
                         self.n_success += 1
                         if self.n_success > max_n_candidates:
-                            raise TooManyCandidates(max_n_candidates)
+                            raise candidate.TooManyCandidates(max_n_candidates)
                         yield cand
                     else:
                         self.n_rejected += 1
-
-    def get_t_overlap(self, dm):
-        '''
-        tbd
-        '''
-        return self.max_downfact * self.md_map[dm].bin_width + EPSILON
 
 class LOTAASCondenserMixin(LOTAASBaseReader):
     def iterate_trial(self, dm):
