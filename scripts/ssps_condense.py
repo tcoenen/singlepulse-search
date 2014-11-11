@@ -14,8 +14,6 @@ import sys
 import optparse
 import StringIO
 from base64 import encodestring
-import re
-from collections import defaultdict
 
 # Standard 3rd party libraries
 import numpy
@@ -30,44 +28,8 @@ from brp.svg.plotters.histogram import HistogramPlotter
 from brp.svg.plotters.limit import YLimitPlotter
 
 # Imports from the ssps single-pulse search library
-from ssps import inf
-from ssps.candidate import read_delays, SinglePulseReaderCondensed
+from ssps.candidate import SinglePulseReaderCondensed
 from ssps.support import check_delays_option
-
-# =============================================================================
-# == Temporary copy of utility functions from other single pulse scripts,    ==
-# == to be replaced with library functions when everything is public.        ==
-# =============================================================================
-SP_PATTERN = re.compile(r'\S+_DM(?P<dm>\d+\.\d+)\.singlepulse')
-INF_PATTERN = re.compile(r'\S+_DM(?P<dm>\d+\.\d+)\.inf')
-
-
-def find_files(directory, pattern):
-    '''
-    Find files matching pattern, return map from DM to filename.
-    '''
-
-    files = os.listdir(directory)
-    dm2file = {}
-    for f in files:
-        m = pattern.match(f)
-        if m:
-            dm = float(m.group('dm'))
-            dm2file[dm] = f
-
-    return dm2file
-
-
-def read_metadata(directory, dm2inf):
-    '''
-    Read all given PRESTO style .inf files in directory.
-    '''
-
-    metadata_map = {}
-    for dm, f in dm2inf.iteritems():
-        metadata_map[dm] = inf.inf_reader(os.path.join(directory, f))
-
-    return metadata_map
 
 
 # =============================================================================

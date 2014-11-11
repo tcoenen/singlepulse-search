@@ -32,7 +32,6 @@ from brp.svg.plotters.limit import YLimitPlotter
 
 # Imports from the ssps single-pulse search library
 from ssps import inf
-from ssps.candidate import read_delays
 from ssps.support import check_delays_option
 
 from ssps import lotaas

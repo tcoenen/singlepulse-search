@@ -13,7 +13,6 @@ import os
 import re
 
 import inf
-from collections import defaultdict
 
 # --------------------------------------------------------------------------
 # -- Constants -------------------------------------------------------------
@@ -21,72 +20,14 @@ from collections import defaultdict
 HARD_LIMIT_N_CANDIDATES = 1000000  # Maximum number of candidates in data.
 EPSILON = 1e-5  # (Smaller than DM0.00 time-series bin size in seconds!)
 
+SP_PATTERN = re.compile(r'\S+_DM(?P<dm>\d+\.\d+)\.singlepulse')
+INF_PATTERN = re.compile(r'\S+_DM(?P<dm>\d+\.\d+)\.inf')
 
 # --------------------------------------------------------------------------
-# -- Support for extra delays ----------------------------------------------
-
+# -- Exceptions ------------------------------------------------------------
 
 class DelaysFileWrong(Exception):
     pass
-
-
-def read_delays(filename, dm_delay_map):
-    '''
-    Read text file containing extra delays.
-
-    Expected format for each line:
-    <dm value> <delay in seconds>
-
-    Lines starting with # are ignored.
-    '''
-    with open(filename, 'r') as f:
-        for line in f:
-            if line and line[0] != '#':
-                split_line = line.split()
-                try:
-                    dm = float(split_line[0])
-                    delay = float(split_line[1])
-                except (ValueError, IndexError):
-                    raise DelaysFileWrong('The delays file %s is wrong!'
-                                          % filename)
-                else:
-                    dm_delay_map[dm] = delay
-    return dm_delay_map
-
-# --------------------------------------------------------------------------
-# -- Read raw candidates ---------------------------------------------------
-
-
-class SinglePulseReaderMixin(object):
-    def grab_dms(self, dms, lodm, hidm):
-        '''
-        Grab the list of intersting DMs (in desired DM range).
-        '''
-        dms.sort()
-
-        if lodm:
-            dms = [dm for dm in dms if lodm <= dm]
-        if hidm:
-            dms = [dm for dm in dms if dm <= hidm]
-
-        return dms
-
-    def grab_dm_delay_map(self, dms, delays_file):
-        '''
-        Extract the delays per DM if available.
-        '''
-        dm_delay_map = dict((dm, 0) for dm in dms)
-        if delays_file:
-            print 'Loading delays from %s' % delays_file
-            dm_delay_map = candidate.read_delays(delays_file, dm_delay_map)
-
-        return dm_delay_map
-
-    def get_t_overlap(self, dm):
-        '''
-        TBD
-        '''
-        return self.max_downfact * self.md_map[dm].bin_width + EPSILON
 
 
 class TooManyCandidates(Exception):
@@ -96,94 +37,13 @@ class TooManyCandidates(Exception):
     def __str__(self):
         return self.msg
 
-
-SP_PATTERN = re.compile(r'\S+_DM(?P<dm>\d+\.\d+)\.singlepulse')
-INF_PATTERN = re.compile(r'\S+_DM(?P<dm>\d+\.\d+)\.inf')
-
-class SinglePulseReaderCondensed(object):
-    def __init__(self, directory, tstart, tend, delays_file, lodm=None, hidm=None):
-        self.sp_dir = os.path.join(directory, 'SINGLEPULSE')
-        self.inf_dir = os.path.join(directory, 'INF')
-        self.sp_map = self.find_files(self.sp_dir, SP_PATTERN)
-        self.inf_map = self.find_files(self.inf_dir, INF_PATTERN)
-        self.md_map = self.read_metadata(self.inf_dir, self.inf_map)
-        self.dms = list(set(self.sp_map.keys()) & set(self.inf_map.keys()))
-
-        delay_map = defaultdict(float)
-        if delays_file:
-            print 'Loading delays from %s' % delays_file
-            delay_map = read_delays(delays_file, delay_map)
-        self.delay_map = delay_map
-
-        if len(self.dms) == 0:
-            raise Exception('No matching .inf AND .singlepulse files in %s' %
-                            directory)
-
-        # Store desired DM, time range.
-        self.tstart = tstart
-        self.tend = tend
-
-        # Only work on the DM trials in the desired range -> filter them.
-        if lodm:
-            self.dms = [dm for dm in self.dms if lodm <= dm]
-        if hidm:
-            self.dms = [dm for dm in self.dms if dm <= hidm]
-
-        self.dms.sort()
-        self.dm2idx = dict([(dm, i) for i, dm in enumerate(self.dms)])
-
-        self.n_success = 0
-        self.n_error = 0
-        self.n_rejected = 0
-
-    def find_files(self, directory, pattern):
-        '''
-        Find files matching pattern, return map from DM to filename.
-        '''
-
-        files = os.listdir(directory)
-        dm2file = {}
-        for f in files:
-            m = pattern.match(f)
-            if m:
-                dm = float(m.group('dm'))
-                dm2file[dm] = f
-
-        return dm2file
+# --------------------------------------------------------------------------
+# -- Read raw candidates ---------------------------------------------------
 
 
-    def read_metadata(self, directory, dm2inf):
-        '''
-        Read all given PRESTO style .inf files in directory.
-        '''
-
-        metadata_map = {}
-        for dm, f in dm2inf.iteritems():
-            metadata_map[dm] = inf.inf_reader(os.path.join(directory, f))
-
-        return metadata_map
-
-    def iterate_trial(self, dm):
-        # for each candidate return: t
-        sp_file = os.path.join(self.sp_dir, self.sp_map[dm])
-
-        with open(sp_file, 'r') as f:
-            delay = self.delay_map[dm]
-            for line in f:
-                split_line = line.split()
-                try:
-                    t = float(split_line[2])
-                    snr = float(split_line[1])
-                except:
-                    self.n_error += 1
-                else:
-                    self.n_success += 1
-                    if self.tstart <= t + delay <= self.tend:
-                        yield t + delay, snr
-
-class SinglePulseReaderBase(SinglePulseReaderMixin):
-    def __init__(self, directory, delays_file, max_downfact=30, lodm=None,
-                 hidm=None):
+class VanillaBaseReader(object):
+    def __init__(self, directory, tstart, tend, delays_file, lodm=None,
+                 hidm=None, max_downfact=30):
         '''
         Read PRESTO single pulse data set.
 
@@ -197,8 +57,9 @@ class SinglePulseReaderBase(SinglePulseReaderMixin):
         self.sp_map = self.find_files(self.sp_dir, SP_PATTERN)
         self.inf_map = self.find_files(self.inf_dir, INF_PATTERN)
 
-        self.tstart = None
-        self.tend = None
+        # Store desired DM, time range.
+        self.tstart = tstart
+        self.tend = tend
         self.max_downfact = max_downfact
 
         # determine trial-DMs, load meta data and extra delays per DM
@@ -245,6 +106,84 @@ class SinglePulseReaderBase(SinglePulseReaderMixin):
 
         return metadata_map
 
+
+class SinglePulseReaderMixin(object):
+    def grab_dms(self, dms, lodm, hidm):
+        '''
+        Grab the list of intersting DMs (in desired DM range).
+        '''
+        dms.sort()
+
+        if lodm:
+            dms = [dm for dm in dms if lodm <= dm]
+        if hidm:
+            dms = [dm for dm in dms if dm <= hidm]
+
+        return dms
+
+    def grab_dm_delay_map(self, dms, delays_file):
+        '''
+        Extract the delays per DM if available.
+        '''
+        dm_delay_map = dict((dm, 0) for dm in dms)
+        if delays_file:
+            print 'Loading delays from %s' % delays_file
+            dm_delay_map = self.read_delays(delays_file, dm_delay_map)
+
+        return dm_delay_map
+
+    def get_t_overlap(self, dm):
+        '''
+        TBD
+        '''
+        return self.max_downfact * self.md_map[dm].bin_width + EPSILON
+
+    def read_delays(self, filename, dm_delay_map):
+        '''
+        Read text file containing extra delays.
+
+        Expected format for each line:
+        <dm value> <delay in seconds>
+
+        Lines starting with # are ignored.
+        '''
+        # TODO: add sanity checking (do the DMs map match those in the file?)
+        with open(filename, 'r') as f:
+            for line in f:
+                if line and line[0] != '#':
+                    split_line = line.split()
+                    try:
+                        dm = float(split_line[0])
+                        delay = float(split_line[1])
+                    except (ValueError, IndexError):
+                        raise DelaysFileWrong('The delays file %s is wrong!'
+                                              % filename)
+                    else:
+                        dm_delay_map[dm] = delay
+        return dm_delay_map
+
+
+
+class SinglePulseReaderCondensed(VanillaBaseReader, SinglePulseReaderMixin):
+    def iterate_trial(self, dm):
+        # for each candidate return: t
+        sp_file = os.path.join(self.sp_dir, self.sp_map[dm])
+
+        with open(sp_file, 'r') as f:
+            delay = self.dm_delay_map[dm]
+            for line in f:
+                split_line = line.split()
+                try:
+                    t = float(split_line[2])
+                    snr = float(split_line[1])
+                except:
+                    self.n_error += 1
+                else:
+                    self.n_success += 1
+                    if self.tstart <= t + delay <= self.tend:
+                        yield t + delay, snr
+
+class SinglePulseReaderBase(SinglePulseReaderMixin, VanillaBaseReader):
     def is_ok(self, t, dm):
         '''
         Use candidate a (t, dm) yes or no.

@@ -28,6 +28,7 @@ class LOTAASBaseReader(candidate.SinglePulseReaderMixin):
         self.dms = self.grab_dms(index.keys(), lodm, hidm)
         self.md_map = self.grab_metadata_map(self.dms, self.inf_file, binwidth_map)
         self.dm_delay_map = self.grab_dm_delay_map(self.dms, delays_file)
+        self.dm2idx = dict([(dm, i) for i, dm in enumerate(self.dms)])
 
         # for book-keeping purposes
         self.n_success = 0
@@ -89,12 +90,6 @@ class LOTAASBaseReader(candidate.SinglePulseReaderMixin):
 
 
 class LOTAASGrabberMixin(LOTAASBaseReader):
-    def __init__(self, *args, **kwargs):
-        # blah ..
-        super(LOTAASGrabberMixin, self).__init__(*args, **kwargs)
-
-        self.dm2idx = dict([(dm, i) for i, dm in enumerate(self.dms)])
-
     def iterate_trial(self, dm):
 
         epsilon = EPSILON
