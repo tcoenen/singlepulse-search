@@ -11,7 +11,10 @@ import sys
 import optparse
 import time
 
+import ssps
 from ssps import candidate
+print candidate.__file__
+from ssps.candidate.vanilla import SinglePulseReaderBase
 from ssps import pulse
 from ssps import pulsetrain
 from ssps import diagnostic
@@ -162,7 +165,7 @@ if __name__ == '__main__':
     print '=' * 77
     print 'Processing %s' % searchoutdir
     print 'Looking for datafiles.'
-    spr = candidate.SinglePulseReaderBase(
+    spr = SinglePulseReaderBase(
         searchoutdir, 
         None, # tstart
         None, # tend

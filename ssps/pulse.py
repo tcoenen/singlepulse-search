@@ -5,7 +5,8 @@ from __future__ import division
 
 import copy
 
-import candidate
+from ssps import candidate
+from ssps.candidate.base import write_singlepulse_file
 
 # --------------------------------------------------------------------------
 # -- Pulse class and friends -----------------------------------------------
@@ -266,4 +267,4 @@ def write_arrivals(filename, pulses):
         pulse_peaks.append(copy.copy(find_peak(pulse)))
 
     pulse_peaks.sort(key=lambda c: c[2])
-    candidate.write_singlepulse_file(filename, pulse_peaks)
+    write_singlepulse_file(filename, pulse_peaks)

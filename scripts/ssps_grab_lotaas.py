@@ -18,7 +18,7 @@ from ssps.support import check_delays_option
 
 # for the porting:
 from ssps import inf
-from ssps import lotaas
+from ssps.candidate.lotaas import LOTAASGrabberMixin
 import copy
 
 # -----------------------------------------------------------------------------
@@ -153,7 +153,7 @@ if __name__ == '__main__':
     # read data
     print '=' * 77
     # NOTE START AND END TIMES STILL HARD CODED
-    spr = lotaas.LOTAASGrabberMixin(args[0], 0, 3600, delays_file, lodm=options.lo_dm,
+    spr = LOTAASGrabberMixin(args[0], 0, 3600, delays_file, lodm=options.lo_dm,
                                     hidm=options.hi_dm, max_downfact=30)
 
     print 'DM range after reading: [%.2f, %.2f]' % (spr.dms[0], spr.dms[-1])

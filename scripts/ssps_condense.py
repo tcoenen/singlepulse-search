@@ -28,7 +28,7 @@ from brp.svg.plotters.histogram import HistogramPlotter
 from brp.svg.plotters.limit import YLimitPlotter
 
 # Imports from the ssps single-pulse search library
-from ssps.candidate import SinglePulseReaderCondensed
+from ssps.candidate.vanilla import SinglePulseReaderCondensed
 from ssps.support import check_delays_option
 
 

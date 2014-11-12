@@ -12,34 +12,17 @@ from __future__ import division
 import os
 import re
 
-import inf
+from ssps import inf
 
-# --------------------------------------------------------------------------
-# -- Constants -------------------------------------------------------------
-
-HARD_LIMIT_N_CANDIDATES = 1000000  # Maximum number of candidates in data.
-EPSILON = 1e-5  # (Smaller than DM0.00 time-series bin size in seconds!)
-
-SP_PATTERN = re.compile(r'\S+_DM(?P<dm>\d+\.\d+)\.singlepulse')
-INF_PATTERN = re.compile(r'\S+_DM(?P<dm>\d+\.\d+)\.inf')
-
-# --------------------------------------------------------------------------
-# -- Exceptions ------------------------------------------------------------
-
-class DelaysFileWrong(Exception):
-    pass
-
-
-class TooManyCandidates(Exception):
-    def __init__(self, n):
-        self.msg = 'Data set contains too many candidates max = %d !' % n
-
-    def __str__(self):
-        return self.msg
+from ssps.candidate.base import SinglePulseReaderMixin
+from ssps.candidate.error import DelaysFileWrong, TooManyCandidates
+from ssps.candidate.constants import HARD_LIMIT_N_CANDIDATES, EPSILON
 
 # --------------------------------------------------------------------------
 # -- Read raw candidates ---------------------------------------------------
 
+SP_PATTERN = re.compile(r'\S+_DM(?P<dm>\d+\.\d+)\.singlepulse')
+INF_PATTERN = re.compile(r'\S+_DM(?P<dm>\d+\.\d+)\.inf')
 
 class VanillaBaseReader(object):
     def __init__(self, directory, tstart, tend, delays_file, lodm=None,
@@ -107,63 +90,6 @@ class VanillaBaseReader(object):
         return metadata_map
 
 
-class SinglePulseReaderMixin(object):
-    def grab_dms(self, dms, lodm, hidm):
-        '''
-        Grab the list of intersting DMs (in desired DM range).
-        '''
-        dms.sort()
-
-        if lodm:
-            dms = [dm for dm in dms if lodm <= dm]
-        if hidm:
-            dms = [dm for dm in dms if dm <= hidm]
-
-        return dms
-
-    def grab_dm_delay_map(self, dms, delays_file):
-        '''
-        Extract the delays per DM if available.
-        '''
-        dm_delay_map = dict((dm, 0) for dm in dms)
-        if delays_file:
-            print 'Loading delays from %s' % delays_file
-            dm_delay_map = self.read_delays(delays_file, dm_delay_map)
-
-        return dm_delay_map
-
-    def get_t_overlap(self, dm):
-        '''
-        TBD
-        '''
-        return self.max_downfact * self.md_map[dm].bin_width + EPSILON
-
-    def read_delays(self, filename, dm_delay_map):
-        '''
-        Read text file containing extra delays.
-
-        Expected format for each line:
-        <dm value> <delay in seconds>
-
-        Lines starting with # are ignored.
-        '''
-        # TODO: add sanity checking (do the DMs map match those in the file?)
-        with open(filename, 'r') as f:
-            for line in f:
-                if line and line[0] != '#':
-                    split_line = line.split()
-                    try:
-                        dm = float(split_line[0])
-                        delay = float(split_line[1])
-                    except (ValueError, IndexError):
-                        raise DelaysFileWrong('The delays file %s is wrong!'
-                                              % filename)
-                    else:
-                        dm_delay_map[dm] = delay
-        return dm_delay_map
-
-
-
 class SinglePulseReaderCondensed(VanillaBaseReader, SinglePulseReaderMixin):
     def iterate_trial(self, dm):
         # for each candidate return: t
@@ -182,6 +108,7 @@ class SinglePulseReaderCondensed(VanillaBaseReader, SinglePulseReaderMixin):
                     self.n_success += 1
                     if self.tstart <= t + delay <= self.tend:
                         yield t + delay, snr
+
 
 class SinglePulseReaderBase(SinglePulseReaderMixin, VanillaBaseReader):
     def is_ok(self, t, dm):
@@ -227,13 +154,3 @@ class SinglePulseReaderBase(SinglePulseReaderMixin, VanillaBaseReader):
                     else:
                         self.n_rejected += 1
 
-# --------------------------------------------------------------------------
-# -- Write out PRESTO style .singlepulse files -----------------------------
-
-
-def write_singlepulse_file(filename, candidates):
-    candidates.sort(key=lambda x: x[2])
-    with open(filename, 'w') as f:
-        f.write('''# DM      Sigma      Time (s)     Sample    Downfact\n''')
-        for c in candidates:
-            f.write('%7.2f %7.2f %13.6f %10d     %3d\n' % (c[0:5]))

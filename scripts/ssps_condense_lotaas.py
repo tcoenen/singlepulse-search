@@ -34,7 +34,7 @@ from brp.svg.plotters.limit import YLimitPlotter
 from ssps import inf
 from ssps.support import check_delays_option
 
-from ssps import lotaas
+from ssps.candidate import lotaas
 
 # =============================================================================
 # =============================================================================

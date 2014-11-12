@@ -1,12 +1,13 @@
 # LOTAAS specific format handling
 from ssps import inf
-from ssps import candidate
+from ssps.candidate.base import SinglePulseReaderMixin
+from ssps.candidate.error import TooManyCandidates
 import copy
 
 HARD_LIMIT_N_CANDIDATES = 1000000  # Maximum number of candidates in data.
 EPSILON = 1e-5  # (Smaller than DM0.00 time-series bin size in seconds!)
 
-class LOTAASBaseReader(candidate.SinglePulseReaderMixin):
+class LOTAASBaseReader(SinglePulseReaderMixin):
     def __init__(self, basename, tstart, tend, delays_file, lodm=None, hidm=None,
                  max_downfact=30):
         '''
@@ -123,7 +124,7 @@ class LOTAASGrabberMixin(LOTAASBaseReader):
 
                         self.n_success += 1
                         if self.n_success > max_n_candidates:
-                            raise candidate.TooManyCandidates(max_n_candidates)
+                            raise TooManyCandidates(max_n_candidates)
                         yield cand
                     else:
                         self.n_rejected += 1
